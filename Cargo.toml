@@ -15,10 +15,11 @@ panic-probe = { version = "1", features = ["print-defmt"] }
 
 # We're using a Pico by default on this template
 rp-pico = "0.9"
-
-# but you can use any BSP. Uncomment this to use the pro_micro_rp2040 BSP instead
-# sparkfun-pro-micro-rp2040 = "0.8"
-
+hx711 = "0.4"
+nb = "1.1"
+usb-device = "0.3"
+usbd-serial = "0.2"
+ufmt = "0.2.0"
 # If you're not going to use a Board Support Package you'll need these:
 # rp2040-hal = { version="0.10", features=["rt", "critical-section-impl"] }
 # rp2040-boot2 = "0.3"
