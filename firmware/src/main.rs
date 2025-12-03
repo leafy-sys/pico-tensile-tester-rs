@@ -10,18 +10,18 @@ use bsp::hal::{
     clocks::{init_clocks_and_plls, Clock},
     pac,
     sio::Sio,
-    watchdog::Watchdog,
     usb::UsbBus,
+    watchdog::Watchdog,
     Timer, // Import Timer
 };
 
-use hx711::Hx711;
-use fugit::ExtU64; // Import the time extension trait
+use fugit::ExtU64;
+use hx711::Hx711; // Import the time extension trait
 
 // --- USB IMPORTS ---
+use ufmt::{uWrite, uwriteln};
 use usb_device::{class_prelude::*, prelude::*};
 use usbd_serial::SerialPort;
-use ufmt::{uWrite, uwriteln};
 
 // --- GLUE CODE ---
 struct SerialWrapper<'a, B: usb_device::bus::UsbBus>(SerialPort<'a, B>);
@@ -43,7 +43,7 @@ fn main() -> ! {
     let sio = Sio::new(pac.SIO);
 
     let external_xtal_freq_hz = 12_000_000u32;
-    
+
     // 1. INITIALIZE CLOCKS FIRST
     let clocks = init_clocks_and_plls(
         external_xtal_freq_hz,
@@ -53,10 +53,12 @@ fn main() -> ! {
         pac.PLL_USB,
         &mut pac.RESETS,
         &mut watchdog,
-    ).ok().unwrap();
+    )
+    .ok()
+    .unwrap();
 
     // 2. NOW INITIALIZE TIMER (Because it needs &clocks)
-    let mut timer = Timer::new(pac.TIMER, &mut pac.RESETS, &clocks);
+    let timer = Timer::new(pac.TIMER, &mut pac.RESETS, &clocks);
 
     // --- USB SETUP ---
     let usb_bus = UsbBusAllocator::new(UsbBus::new(
@@ -76,9 +78,12 @@ fn main() -> ! {
 
     // --- LOAD CELL SETUP ---
     let pins = bsp::Pins::new(
-        pac.IO_BANK0, pac.PADS_BANK0, sio.gpio_bank0, &mut pac.RESETS,
+        pac.IO_BANK0,
+        pac.PADS_BANK0,
+        sio.gpio_bank0,
+        &mut pac.RESETS,
     );
-    
+
     let dt_pin = pins.gpio16.into_floating_input();
     let sck_pin = pins.gpio17.into_push_pull_output();
 
@@ -102,26 +107,20 @@ fn main() -> ! {
 
     loop {
         // --- 1. Poll USB ---
-        if usb_dev.poll(&mut [&mut serial_wrapper.0]) {
-        }
+        usb_dev.poll(&mut [&mut serial_wrapper.0]);
 
         // --- 2. Check Timer (Non-blocking!) ---
         if timer.get_counter() >= next_read {
-            
             // Schedule next read
             next_read = timer.get_counter() + 100u64.millis();
 
             // --- 3. Read Sensor ---
-            match load_cell.retrieve() {
-                Ok(value) => {
-                    let clean_value = value - offset;
-                    let _ = uwriteln!(serial_wrapper, "Force: {}\r", clean_value);
-                }
-                Err(_) => { }
+            if let Ok(value) = load_cell.retrieve() {
+                let clean_value = value - offset;
+                let _ = uwriteln!(serial_wrapper, "Force: {}\r", clean_value);
             }
         }
     }
 }
 
 // Testing
-
