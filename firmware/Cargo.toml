@@ -20,6 +20,7 @@ nb = "1.1"
 usb-device = "0.3"
 usbd-serial = "0.2"
 ufmt = "0.2.0"
+fugit = "0.3.9"
 # If you're not going to use a Board Support Package you'll need these:
 # rp2040-hal = { version="0.10", features=["rt", "critical-section-impl"] }
 # rp2040-boot2 = "0.3"

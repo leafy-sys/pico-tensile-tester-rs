@@ -2,7 +2,6 @@
 #![no_main]
 
 use bsp::entry;
-use defmt::*;
 use defmt_rtt as _;
 use panic_probe as _;
 use rp_pico as bsp;
@@ -13,29 +12,28 @@ use bsp::hal::{
     sio::Sio,
     watchdog::Watchdog,
     usb::UsbBus,
+    Timer, // Import Timer
 };
 
 use hx711::Hx711;
+use fugit::ExtU64; // Import the time extension trait
 
 // --- USB IMPORTS ---
 use usb_device::{class_prelude::*, prelude::*};
 use usbd_serial::SerialPort;
 use ufmt::{uWrite, uwriteln};
 
-// --- FIXED GLUE CODE (Newtype Pattern) ---
-// 1. Define a wrapper struct that WE own.
+// --- GLUE CODE ---
 struct SerialWrapper<'a, B: usb_device::bus::UsbBus>(SerialPort<'a, B>);
 
-// 2. Implement uWrite for OUR wrapper.
 impl<B: usb_device::bus::UsbBus> uWrite for SerialWrapper<'_, B> {
     type Error = ();
     fn write_str(&mut self, s: &str) -> Result<(), Self::Error> {
-        // We delegate the write to the inner SerialPort (self.0)
         let _ = self.0.write(s.as_bytes());
         Ok(())
     }
 }
-// -----------------------------------------
+// ----------------
 
 #[entry]
 fn main() -> ! {
@@ -45,6 +43,8 @@ fn main() -> ! {
     let sio = Sio::new(pac.SIO);
 
     let external_xtal_freq_hz = 12_000_000u32;
+    
+    // 1. INITIALIZE CLOCKS FIRST
     let clocks = init_clocks_and_plls(
         external_xtal_freq_hz,
         pac.XOSC,
@@ -54,6 +54,9 @@ fn main() -> ! {
         &mut pac.RESETS,
         &mut watchdog,
     ).ok().unwrap();
+
+    // 2. NOW INITIALIZE TIMER (Because it needs &clocks)
+    let mut timer = Timer::new(pac.TIMER, &mut pac.RESETS, &clocks);
 
     // --- USB SETUP ---
     let usb_bus = UsbBusAllocator::new(UsbBus::new(
@@ -65,8 +68,6 @@ fn main() -> ! {
     ));
 
     let serial = SerialPort::new(&usb_bus);
-    
-    // WRAP the serial port in our new struct so we can print to it!
     let mut serial_wrapper = SerialWrapper(serial);
 
     let mut usb_dev = UsbDeviceBuilder::new(&usb_bus, UsbVidPid(0x16c0, 0x27dd))
@@ -81,6 +82,7 @@ fn main() -> ! {
     let dt_pin = pins.gpio16.into_floating_input();
     let sck_pin = pins.gpio17.into_push_pull_output();
 
+    // Create a delay for the HX711 initialization
     let delay = cortex_m::delay::Delay::new(core.SYST, clocks.system_clock.freq().to_Hz());
 
     let mut load_cell = Hx711::new(delay, dt_pin, sck_pin).ok().unwrap();
@@ -94,25 +96,29 @@ fn main() -> ! {
         cortex_m::asm::delay(1_000_000);
     }
 
+    // Set the first target time (Now + 100ms)
+    // FIX: Use 100u64 so .millis() works!
+    let mut next_read = timer.get_counter() + 100u64.millis();
+
     loop {
         // --- 1. Poll USB ---
-        // We have to access the inner SerialPort using .0
         if usb_dev.poll(&mut [&mut serial_wrapper.0]) {
-            // Poll happens here
         }
 
-        // --- 2. Read Sensor ---
-        match load_cell.retrieve() {
-            Ok(value) => {
-                let clean_value = value - offset;
-                
-                // --- 3. Send to PC ---
-                // Now we can use uwriteln! on our wrapper!
-                let _ = uwriteln!(serial_wrapper, "Force: {}\r", clean_value);
+        // --- 2. Check Timer (Non-blocking!) ---
+        if timer.get_counter() >= next_read {
+            
+            // Schedule next read
+            next_read = timer.get_counter() + 100u64.millis();
+
+            // --- 3. Read Sensor ---
+            match load_cell.retrieve() {
+                Ok(value) => {
+                    let clean_value = value - offset;
+                    let _ = uwriteln!(serial_wrapper, "Force: {}\r", clean_value);
+                }
+                Err(_) => { }
             }
-            Err(_) => { }
         }
-
-        cortex_m::asm::delay(13_300_000); 
     }
 }
