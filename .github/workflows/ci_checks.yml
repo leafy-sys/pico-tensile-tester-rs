@@ -30,9 +30,17 @@ jobs:
         with:
           toolchain: ${{ matrix.rust }}
           target: thumbv6m-none-eabi
+      
       - run: cargo install flip-link
+
+      # CHANGED: Added working-directory so it finds the Cargo.toml
       - run: cargo build --all
+        working-directory: firmware
+        
+      # CHANGED: Added working-directory
       - run: cargo build --all --release
+        working-directory: firmware
+
   linting:
     name: Linting
     runs-on: ubuntu-latest
@@ -44,7 +52,11 @@ jobs:
         with:
           components: clippy
           target: thumbv6m-none-eabi
+      
+      # CHANGED: Added working-directory
       - run: cargo clippy --all-features -- --deny=warnings
+        working-directory: firmware
+
   formatting:
     name: Formatting
     runs-on: ubuntu-latest
@@ -56,4 +68,7 @@ jobs:
         with:
           components: rustfmt
           target: thumbv6m-none-eabi
+      
+      # CHANGED: Added working-directory
       - run: cargo fmt -- --check
+        working-directory: firmware
